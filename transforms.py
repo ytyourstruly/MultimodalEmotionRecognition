@@ -11,7 +11,10 @@ try:
     import accimage
 except ImportError:
     accimage = None
-
+from opts import parse_opts
+opt = parse_opts()
+np.random.seed(opt.manual_seed)
+torch.manual_seed(opt.manual_seed)
 class Compose(object):
     """Composes several transforms together.
     Args:

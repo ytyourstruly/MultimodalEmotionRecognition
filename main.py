@@ -27,12 +27,31 @@ EARLY_STOPPING_PATIENCE = 30   # epochs without composite improvement before sto
 MIN_EPOCH_FOR_BEST       = 10  # fixed warm-up buffer — no unfreeze epoch to anchor to
 
 
+def seed_worker(worker_id):
+    worker_seed = opt.manual_seed + worker_id
+    np.random.seed(worker_seed)
+
+
+
+
+
 if __name__ == '__main__':
     opt = parse_opts()
     n_folds = 12
     test_accuracies = []
     if opt.device != 'cpu':
         opt.device = 'cuda' if torch.cuda.is_available() else 'cpu'  
+    
+
+
+
+    np.random.seed(opt.manual_seed)
+    torch.manual_seed(opt.manual_seed)
+    torch.cuda.manual_seed_all(opt.manual_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark     = False  
+
+
 
     pretrained = opt.pretrain_path != 'None'    
     
@@ -117,6 +136,7 @@ if __name__ == '__main__':
                 batch_size=opt.batch_size,
                 shuffle=True,
                 num_workers=opt.n_threads,
+                worker_init_fn=seed_worker,
                 pin_memory=True)
         
             # train_logger = Logger(
@@ -154,6 +174,7 @@ if __name__ == '__main__':
                 batch_size=opt.batch_size,
                 shuffle=False,
                 num_workers=opt.n_threads,
+                worker_init_fn=seed_worker,
                 pin_memory=True)
             
             
@@ -280,6 +301,7 @@ if __name__ == '__main__':
                 batch_size=opt.batch_size,
                 shuffle=False,
                 num_workers=opt.n_threads,
+                worker_init_fn=seed_worker,
                 pin_memory=True)
             
             test_loss, test_prec1, y_true, y_pred = val_epoch(
