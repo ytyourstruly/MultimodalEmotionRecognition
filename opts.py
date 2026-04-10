@@ -9,7 +9,7 @@ import argparse
 def parse_opts():
     parser = argparse.ArgumentParser()
     parser.add_argument('--annotation_path', default='./ravdess_preprocessing', type=str, help='Annotation file path')
-    parser.add_argument('--result_path', default='./results_baseline?4', type=str, help='Result directory path')
+    parser.add_argument('--result_path', default='/home/user/MultimodalEmotionRecognition/results_male_normalize_fisherindices', type=str, help='Result directory path')
     parser.add_argument('--store_name', default='model', type=str, help='Name to store checkpoints')
     parser.add_argument('--dataset', default='RAVDESS', type=str, help='Used dataset. Currently supporting Ravdess')
     parser.add_argument('--n_classes', default=8, type=int, help='Number of classes')
@@ -22,7 +22,23 @@ def parse_opts():
     
     
     parser.add_argument('--fisherindex_template', default= '', type=str, help='pre-calculated fisher index folders, set to None if all features are used')
+    parser.add_argument('--pretrain_audio_path', default='None', type=str,
+                        help='Path to pretrained audio model checkpoint. '
+                             'Supports {fold} placeholder, e.g. '
+                             'results/pretrain/fold_{fold}/RAVDESS_audio_best0.pth')
+    parser.add_argument('--data_type', default='audio', type=str,
+                        help='Type of data to use. Currently supporting audio and visual')
+    parser.add_argument('--freeze_audio_encoder', action='store_true',
+                        help='Freeze audio encoder weights during early '
+                             'fusion training epochs.')
     
+    parser.add_argument('--unfreeze_epoch', default=10, type=int,
+                        help='Epoch at which to unfreeze audio encoder '
+                             'if --freeze_audio_encoder is set.')
+    
+    parser.add_argument('--audio_lr_multiplier', default=0.1, type=float,
+                        help='LR multiplier for pretrained audio encoder '
+                             'during fusion (use 0.1 for fine-tuning).')
     parser.add_argument('--max_shift_ratio', default=0.5, type=float, help='maximum time shift ratio for audio data augmentation')
     parser.add_argument('--sample_size', default=224, type=int, help='Video dimensions: ravdess = 224 ')
     parser.add_argument('--sample_duration', default=15, type=int, help='Temporal duration of inputs, ravdess = 15')

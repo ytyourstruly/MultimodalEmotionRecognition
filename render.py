@@ -2,8 +2,8 @@ import os
 import pickle
 import matplotlib.pyplot as plt
 
-base_dir = "/home/user/RA/baseline2/multimodal-emotion-recognition/results_baseline?2"
-num_folds = 12
+base_dir = "/home/user/MultimodalEmotionRecognition/results/pretrain_audio"
+num_folds = 1
 
 for fold in range(1, num_folds + 1):
     fold_dir = os.path.join(base_dir, f"fold_{fold}")

@@ -13,7 +13,7 @@ from torch import nn, optim
 from torch.optim import lr_scheduler
 
 from opts import parse_opts
-from model import generate_model
+from model import _get_parameter_groups, generate_model
 import transforms 
 from dataset import get_training_set, get_validation_set, get_test_set
 from utils import Logger, adjust_learning_rate, build_class_weights, save_checkpoint, get_emotion_labels, compute_war_uar,save_csv_report, save_confusion_matrix
@@ -21,7 +21,9 @@ import pickle
 from train import train_epoch
 from validation import val_epoch
 import time
-
+from augmentations import (get_audio_transform_pretrain,
+                            get_audio_transform_fusion,
+                            get_audio_transform_val)
 
 EARLY_STOPPING_PATIENCE = 30   # epochs without composite improvement before stopping
 MIN_EPOCH_FOR_BEST       = 10  # fixed warm-up buffer — no unfreeze epoch to anchor to
@@ -37,7 +39,7 @@ def seed_worker(worker_id):
 
 if __name__ == '__main__':
     opt = parse_opts()
-    n_folds = 12
+    n_folds = 1
     test_accuracies = []
     if opt.device != 'cpu':
         opt.device = 'cuda' if torch.cuda.is_available() else 'cpu'  
@@ -81,7 +83,7 @@ if __name__ == '__main__':
                         f"{fisher_path} — using all channels")
                 fisher_path = None
 
-
+        is_multimodal = (opt.model == 'audiovisual')
         train_loss_history = {}
         train_acc_history  = {}
         train_uar_history = {}
@@ -100,10 +102,7 @@ if __name__ == '__main__':
                                        f'/annotations_croppad_fold{fold+1}.txt')
         
         print(opt)
-        with open(os.path.join(opt.result_path, 'opts'+str(time.time())+str(fold)+'.json'), 'w') as opt_file:
-            json.dump(vars(opt), opt_file)
             
-        torch.manual_seed(opt.manual_seed)
 
         _tmp_audio_channels = opt.audio_channels
         if fisher_path is not None:
@@ -111,7 +110,6 @@ if __name__ == '__main__':
         model, parameters = generate_model(
             opt, audio_input_channels=_tmp_audio_channels)
         criterion = nn.CrossEntropyLoss().to(opt.device)
-        
         if not opt.no_train:
             
             video_transform = transforms.Compose([
@@ -119,14 +117,26 @@ if __name__ == '__main__':
                 transforms.RandomRotate(),
                 transforms.ToTensor(opt.video_norm_value)])
             
-            # audio_transform = transforms.Compose([
-            #     transforms.NormalizeAudio(),
-            #     transforms.RandomGainVariation(min_gain=0.7, max_gain=1.3),  # 2. gain shift
-            #     transforms.RandomNoiseInjection(min_snr_db=20, max_snr_db=40),  # 3. noise
-            #     transforms.RandomTimeShift(opt.max_shift_ratio)],
-            #     )
+            if is_multimodal:
+            # Phase 2: sync-safe only — no time stretch, no time shift
+                audio_transform = get_audio_transform_fusion(sr=22050)
+                print('[Augment] Using FUSION pipeline (sync-safe)')
+            else:
+            # Phase 1: full pipeline including time stretch + time shift
+                audio_transform = get_audio_transform_pretrain(
+                    sr=22050, max_shift_ratio=opt.max_shift_ratio)
+                print('[Augment] Using PRETRAIN pipeline (full augmentation)')
 
-            training_data = get_training_set(opt, spatial_transform=video_transform, fisher_indices_path=fisher_path) 
+        # ── Resolve per-fold audio pretrain path ─────────────────────────
+            pretrain_audio_path = 'None'
+            if opt.pretrain_audio_path != 'None':
+                pretrain_audio_path = opt.pretrain_audio_path.format(fold=fold + 1)
+                if not os.path.exists(pretrain_audio_path):
+                    print(f'[Pretrain] WARNING: {pretrain_audio_path} not found')
+                    pretrain_audio_path = 'None'
+            opt.pretrain_audio_path_resolved = pretrain_audio_path  # pass to generate_model
+
+            training_data = get_training_set(opt, spatial_transform=video_transform, fisher_indices_path=fisher_path, audio_transform=audio_transform) 
             train_class_weights = build_class_weights(
                     training_data, opt.n_classes, opt.device)
             criterion_train = nn.CrossEntropyLoss(weight=train_class_weights)
@@ -155,15 +165,15 @@ if __name__ == '__main__':
                 weight_decay=opt.weight_decay,
                 nesterov=False)
             scheduler = lr_scheduler.ReduceLROnPlateau(
-                optimizer, 'min', patience=opt.lr_patience)
+                optimizer, 'max', patience=opt.lr_patience)
             
         if not opt.no_val:
             video_transform = transforms.Compose([
                 transforms.ToTensor(opt.video_norm_value)])     
             # audio_transform = transforms.Compose([
             #     transforms.NormalizeAudio()])
-            validation_data = get_validation_set(opt, spatial_transform=video_transform, fisher_indices_path=fisher_path)
-            
+            audio_transform_val = get_audio_transform_val()
+            validation_data = get_validation_set(opt, spatial_transform=video_transform, fisher_indices_path=fisher_path, audio_transform=audio_transform_val)
 
             val_class_weights = build_class_weights(
                     validation_data, opt.n_classes, opt.device)
@@ -204,10 +214,25 @@ if __name__ == '__main__':
                           f"no composite improvement for "
                           f"{EARLY_STOPPING_PATIENCE} epochs.")
                     break
-            
+            if (opt.freeze_audio_encoder
+                    and is_multimodal
+                    and i == opt.unfreeze_epoch):
+                for name, param in model.named_parameters():
+                    if name.startswith('audio_model.'):
+                        param.requires_grad = True
+                print(f'[Epoch {i}] Audio encoder unfrozen.')
+                # Rebuild optimizer so new params get gradients tracked
+                parameters = _get_parameter_groups(model, opt)
+                optimizer = optim.SGD(
+                    parameters,
+                    lr=opt.learning_rate,
+                    momentum=opt.momentum,
+                    dampening=opt.dampening,
+                    weight_decay=opt.weight_decay,
+                )
             if not opt.no_train:
-                adjust_learning_rate(optimizer, i, opt)
-                train_loss, train_acc, y_true, y_pred = train_epoch(i, train_loader, model, criterion, optimizer, opt)
+                # adjust_learning_rate(optimizer, i, opt)
+                train_loss, train_acc, y_true, y_pred = train_epoch(i, train_loader, model, criterion_train, optimizer, opt)
                 war, uar = compute_war_uar(y_true, y_pred)
                 train_loss_history[i] = float(train_loss)
                 train_acc_history[i]  = float(train_acc)
@@ -224,11 +249,11 @@ if __name__ == '__main__':
                         False, opt, fold, fold_dir)
             
             if not opt.no_val:
-                val_loss, prec1, y_true, y_pred = val_epoch(i, val_loader, model, criterion, opt)
+                val_loss, prec1, y_true, y_pred = val_epoch(i, val_loader, model, criterion_val, opt)
                 war, uar = compute_war_uar(y_true, y_pred)
                 composite = 0.7 * uar + 0.3 * war
 
-
+                
 
                 val_loss_history[i] = float(val_loss)
                 val_acc_history[i]  = float(prec1)
@@ -263,7 +288,7 @@ if __name__ == '__main__':
                     },
                     is_best, opt, fold, fold_dir)
             if not opt.no_train:
-                # scheduler.step(val_loss)
+                scheduler.step(composite)
                 for name, hist in [
                     (f'train_loss_{fold+1}.pkl', train_loss_history),
                     (f'train_acc_{fold+1}.pkl', train_acc_history),
@@ -275,6 +300,8 @@ if __name__ == '__main__':
                     with open(os.path.join(fold_dir, name), 'wb') as f:
                         pickle.dump(hist, f)
         if early_stop:
+            with open(os.path.join(opt.result_path, 'opts'+str(time.time())+str(fold)+'.json'), 'w') as opt_file:
+                json.dump(vars(opt), opt_file)
             print(f"[Fold {fold+1}] Stopped early at epoch {i}. "
                       f"Best composite: {best_composite:.4f}")         
         if opt.test:
@@ -284,11 +311,12 @@ if __name__ == '__main__':
 
             video_transform = transforms.Compose([
                 transforms.ToTensor(opt.video_norm_value)])
+            audio_transform = get_audio_transform_val()
             # audio_transform = transforms.Compose([
             #     transforms.NormalizeAudio()])
-            test_data = get_test_set(opt, spatial_transform=video_transform,  fisher_indices_path=fisher_path) 
+            test_data = get_test_set(opt, spatial_transform=video_transform,  fisher_indices_path=fisher_path, audio_transform=audio_transform) 
             test_class_weights = build_class_weights(
-                    validation_data, opt.n_classes, opt.device)
+                    test_data, opt.n_classes, opt.device)
             criterion_test = nn.CrossEntropyLoss(weight=test_class_weights)
             criterion_test = criterion_test.to(opt.device)
             path = '%s/%s_best' % (fold_dir, opt.store_name)+str(fold)+'.pth'
@@ -305,7 +333,7 @@ if __name__ == '__main__':
                 pin_memory=True)
             
             test_loss, test_prec1, y_true, y_pred = val_epoch(
-                    10000, test_loader, model, criterion, opt)
+                    10000, test_loader, model, criterion_test, opt)
 
             war, uar = compute_war_uar(y_true, y_pred)
 

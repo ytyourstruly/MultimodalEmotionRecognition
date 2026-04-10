@@ -100,6 +100,53 @@ def val_epoch_multimodal(epoch, data_loader, model, criterion, opt, modality='bo
     #             'prec5': top5.avg.item()})
 
     return losses.avg, top1.avg, all_targets, all_preds
+def val_epoch_audio(epoch, data_loader, model, criterion, opt):
+    print('validation at epoch {}'.format(epoch))
+    model.eval()
+
+    batch_time = AverageMeter()
+    data_time  = AverageMeter()
+    losses     = AverageMeter()
+    top1       = AverageMeter()
+    top5       = AverageMeter()
+    all_preds   = []
+    all_targets = []
+
+    end_time = time.time()
+    for i, (audio_inputs, targets) in enumerate(data_loader):
+        data_time.update(time.time() - end_time)
+
+        audio_inputs = audio_inputs.to(opt.device)
+        targets      = targets.to(opt.device)
+
+        with torch.no_grad(), autocast():
+            outputs = model(audio_inputs)
+            loss    = criterion(outputs, targets)
+
+        _, preds = outputs.max(1)
+        all_preds.extend(preds.cpu().numpy())
+        all_targets.extend(targets.cpu().numpy())
+
+        prec1, prec5 = calculate_accuracy(outputs.data, targets.data, topk=(1, 5))
+        losses.update(loss.item(), audio_inputs.size(0))
+        top1.update(prec1, audio_inputs.size(0))
+        top5.update(prec5, audio_inputs.size(0))
+
+        batch_time.update(time.time() - end_time)
+        end_time = time.time()
+
+        if i % 10 == 0:
+            print('Epoch: [{0}][{1}/{2}]\t'
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                  'Prec@1 {top1.val:.5f} ({top1.avg:.5f})'.format(
+                      epoch, i + 1, len(data_loader),
+                      loss=losses, top1=top1))
+
+    return losses.avg, top1.avg, all_targets, all_preds
+
+
 def val_epoch(epoch, data_loader, model, criterion, opt, modality='both', dist=None):
+    if opt.model == 'audio':
+        return val_epoch_audio(epoch, data_loader, model, criterion, opt)
     return val_epoch_multimodal(epoch, data_loader, model, criterion, opt, modality, dist)
     
