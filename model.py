@@ -5,10 +5,10 @@ This code is based on https://github.com/okankop/Efficient-3DCNNs
 import os
 
 from torch import nn
-
+import torch
 from models import multimodalcnn
 
-def generate_model(opt, audio_input_channels=255):
+def generate_model(opt, audio_input_channels=255, path=None):
     if opt.model == 'multimodalcnn':   
         model = multimodalcnn.MultiModalCNN(
             num_classes=opt.n_classes,
@@ -22,8 +22,9 @@ def generate_model(opt, audio_input_channels=255):
         model = nn.DataParallel(model, device_ids=None)
 
         if opt.pretrain_audio_path != 'None':
-            _load_pretrained_audio(model, opt.pretrain_audio_path)
+            _load_pretrained_audio(model, path)
             parameters = _get_parameter_groups(model, opt)
+            return model, parameters
     elif opt.model == 'audio':
         from models.multimodalcnn import AudioCNNPool
         model = AudioCNNPool(
@@ -89,7 +90,7 @@ def _get_parameter_groups(model, opt):
     audio_encoder_params  = []
     visual_encoder_params = []
     fusion_params         = []
-
+    # print(model)
     audio_encoder_names = {n for n, _ in model.audio_model.named_parameters()}
     visual_encoder_names = {n for n, _ in model.visual_model.named_parameters()}
 

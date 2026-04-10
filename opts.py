@@ -22,10 +22,10 @@ def parse_opts():
     
     
     parser.add_argument('--fisherindex_template', default= '', type=str, help='pre-calculated fisher index folders, set to None if all features are used')
-    parser.add_argument('--pretrain_audio_path', default='None', type=str,
+    parser.add_argument('--pretrain_audio_path', default='./results/pretrain_audio/fold_{fold}/RAVDESS_audio_15_best0.pth', type=str,
                         help='Path to pretrained audio model checkpoint. '
                              'Supports {fold} placeholder, e.g. '
-                             'results/pretrain/fold_{fold}/RAVDESS_audio_best0.pth')
+                             'results/pretrain/fold_{fold}/RAVDESS_audio_15_best0.pth')
     parser.add_argument('--data_type', default='audio', type=str,
                         help='Type of data to use. Currently supporting audio and visual')
     parser.add_argument('--freeze_audio_encoder', action='store_true',

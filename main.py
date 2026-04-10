@@ -102,13 +102,27 @@ if __name__ == '__main__':
                                        f'/annotations_croppad_fold{fold+1}.txt')
         
         print(opt)
-            
+        
+
 
         _tmp_audio_channels = opt.audio_channels
         if fisher_path is not None:
             _tmp_audio_channels = len(np.load(fisher_path))
+
+
+        pretrain_audio_path = 'None'
+        if opt.pretrain_audio_path != 'None':
+            pretrain_audio_path = opt.pretrain_audio_path.format(fold=fold + 1)
+            print(pretrain_audio_path)
+            if not os.path.exists(pretrain_audio_path):
+                print(f'[Pretrain] WARNING: {pretrain_audio_path} not found')
+                pretrain_audio_path = 'None'
         model, parameters = generate_model(
-            opt, audio_input_channels=_tmp_audio_channels)
+            opt, audio_input_channels=_tmp_audio_channels, path=pretrain_audio_path)
+        
+
+
+
         criterion = nn.CrossEntropyLoss().to(opt.device)
         if not opt.no_train:
             
@@ -128,14 +142,7 @@ if __name__ == '__main__':
                 print('[Augment] Using PRETRAIN pipeline (full augmentation)')
 
         # ── Resolve per-fold audio pretrain path ─────────────────────────
-            pretrain_audio_path = 'None'
-            if opt.pretrain_audio_path != 'None':
-                pretrain_audio_path = opt.pretrain_audio_path.format(fold=fold + 1)
-                if not os.path.exists(pretrain_audio_path):
-                    print(f'[Pretrain] WARNING: {pretrain_audio_path} not found')
-                    pretrain_audio_path = 'None'
-            opt.pretrain_audio_path_resolved = pretrain_audio_path  # pass to generate_model
-
+            
             training_data = get_training_set(opt, spatial_transform=video_transform, fisher_indices_path=fisher_path, audio_transform=audio_transform) 
             train_class_weights = build_class_weights(
                     training_data, opt.n_classes, opt.device)
@@ -166,7 +173,6 @@ if __name__ == '__main__':
                 nesterov=False)
             scheduler = lr_scheduler.ReduceLROnPlateau(
                 optimizer, 'max', patience=opt.lr_patience)
-            
         if not opt.no_val:
             video_transform = transforms.Compose([
                 transforms.ToTensor(opt.video_norm_value)])     
