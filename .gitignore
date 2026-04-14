@@ -27,7 +27,6 @@ share/python-wheels/
 MANIFEST
 *.npy
 *.json
-*.txt
 *.pth
 *.pkl
 *.png
