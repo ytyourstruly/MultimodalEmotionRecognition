@@ -59,23 +59,24 @@ def _load_pretrained_audio(model, path):
     remapped = {}
     model_audio_keys = set(
         k for k in model.state_dict().keys()
-        if k.startswith('audio_model.')
+        if 'audio_model.' in k
     )
     
     for k, v in pretrained_dict.items():
-        candidate = f'audio_model.{k}'
+        candidate = f'module.audio_model.{k}'
         if candidate in model_audio_keys:
             remapped[candidate] = v
         else:
             print(f'  [Pretrain] Skipping key not found in fusion model: {k}')
     
     missing, unexpected = model.load_state_dict(remapped, strict=False)
-    
-    loaded = len(remapped) - len(missing)
+
+    missing_audio = [k for k in missing if 'audio_model.' in k]
+    loaded = len(model_audio_keys) - len(missing_audio)
     print(f'[Pretrain] Loaded {loaded}/{len(model_audio_keys)} '
           f'audio encoder weights from {path}')
-    if missing:
-        print(f'  Missing  : {missing[:5]}{"..." if len(missing)>5 else ""}')
+    if missing_audio:
+        print(f'  Missing audio keys: {missing_audio[:5]}{"..." if len(missing_audio)>5 else ""}')
     if unexpected:
         print(f'  Unexpected: {unexpected[:5]}')
 
@@ -91,8 +92,9 @@ def _get_parameter_groups(model, opt):
     visual_encoder_params = []
     fusion_params         = []
     # print(model)
-    audio_encoder_names = {n for n, _ in model.audio_model.named_parameters()}
-    visual_encoder_names = {n for n, _ in model.visual_model.named_parameters()}
+    inner = model.module if hasattr(model, 'module') else model
+    audio_encoder_names = {n for n, _ in inner.audio_model.named_parameters()}
+    visual_encoder_names = {n for n, _ in inner.visual_model.named_parameters()}
 
     for name, param in model.named_parameters():
         # Strip sub-module prefix to match

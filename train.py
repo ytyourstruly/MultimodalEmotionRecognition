@@ -25,12 +25,20 @@ def train_epoch_multimodal(epoch, data_loader, model, criterion, optimizer, opt)
         data_time.update(time.time() - end_time)
 
    
-        targets = targets.to(opt.device)
+        audio_inputs  = audio_inputs.to(opt.device)
+        visual_inputs = visual_inputs.to(opt.device)
+        targets       = targets.to(opt.device)
+
+        audio_inputs  = Variable(audio_inputs)
+        visual_inputs = Variable(visual_inputs)
+        targets       = Variable(targets)
+
             
         if opt.mask is not None:
             with torch.no_grad():
                 
                 if opt.mask == 'noise':
+                    torch.randn(audio_inputs.size(), device=opt.device)
                     audio_inputs = torch.cat((audio_inputs, torch.randn(audio_inputs.size()), audio_inputs), dim=0)                   
                     visual_inputs = torch.cat((visual_inputs, visual_inputs, torch.randn(visual_inputs.size())), dim=0) 
                     targets = torch.cat((targets, targets, targets), dim=0)                    
@@ -40,7 +48,9 @@ def train_epoch_multimodal(epoch, data_loader, model, criterion, optimizer, opt)
                     targets = targets[shuffle]
                     
                 elif opt.mask == 'softhard':
-                    coefficients = torch.randint(low=0, high=100,size=(audio_inputs.size(0),1,1))/100
+                    coefficients = torch.randint(low=0, high=100, size=(audio_inputs.size(0),1,1), device=opt.device) / 100
+                    torch.zeros(audio_inputs.size(), device=opt.device)
+            
                     vision_coefficients = 1 - coefficients
                     coefficients = coefficients.repeat(1,audio_inputs.size(1),audio_inputs.size(2))
                     vision_coefficients = vision_coefficients.unsqueeze(-1).unsqueeze(-1).repeat(1,visual_inputs.size(1), visual_inputs.size(2), visual_inputs.size(3), visual_inputs.size(4))
@@ -59,10 +69,7 @@ def train_epoch_multimodal(epoch, data_loader, model, criterion, optimizer, opt)
         visual_inputs = visual_inputs.permute(0,2,1,3,4)
         visual_inputs = visual_inputs.reshape(visual_inputs.shape[0]*visual_inputs.shape[1], visual_inputs.shape[2], visual_inputs.shape[3], visual_inputs.shape[4])
         
-        audio_inputs = Variable(audio_inputs)
-        visual_inputs = Variable(visual_inputs)
 
-        targets = Variable(targets)
         with autocast():
             outputs = model(audio_inputs, visual_inputs)
             loss = criterion(outputs, targets)
