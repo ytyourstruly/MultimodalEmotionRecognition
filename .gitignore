@@ -28,6 +28,7 @@ MANIFEST
 *.npy
 *.json
 *.pth
+*.txt
 *.pkl
 *.png
 *.csv
