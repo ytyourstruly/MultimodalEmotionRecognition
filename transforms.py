@@ -7,15 +7,15 @@ import numbers
 import numpy as np
 import torch
 from PIL import Image
-try:
-    import accimage
-except ImportError:
-    accimage = None
 from opts import parse_opts
 opt = parse_opts()
 np.random.seed(opt.manual_seed)
 torch.manual_seed(opt.manual_seed)
-random.seed(opt.manual_seed)
+try:
+    import accimage
+except ImportError:
+    accimage = None
+
 class Compose(object):
     """Composes several transforms together.
     Args:
@@ -161,84 +161,6 @@ class RandomRotate(object):
 
     def randomize_parameters(self):
         self.rotate_angle = random.randint(-10, 10)
-
-class NormalizeAudio(object):
-    """Scale waveform to [-1, 1] by peak normalisation.
-
-    Applied in both train and val pipelines — this is not augmentation,
-    it is a required pre-processing step so that downstream noise levels
-    and model weights are scale-invariant across speakers.
-    """
-
-    def __call__(self, y: np.ndarray) -> np.ndarray:
-        m = np.max(np.abs(y))
-        return (y / m).astype(y.dtype) if m > 0 else y
-
-    def randomize_parameters(self):
-        pass
-class RandomTimeShift(object):
-    def __init__(self, max_shift_ratio: float = 0.1):
-        self.max_shift_ratio = max_shift_ratio
-
-    def __call__(self, y: np.ndarray) -> np.ndarray:
-        # T is always the last axis whether y is (T,) or (F, T)
-        t     = y.shape[-1]
-        shift = int(random.uniform(-self.max_shift_ratio, self.max_shift_ratio) * t)
-
-        if shift == 0:
-            return y
-
-        # np.roll works on any ndim and any axis
-        shifted = np.roll(y, shift, axis=-1)
-
-        # Zero-pad the wrapped region so it isn't circular
-        if shift > 0:
-            shifted[..., :shift] = 0      # zero leading samples
-        else:
-            shifted[..., shift:] = 0      # zero trailing samples
-
-        return shifted
-
-    def randomize_parameters(self):
-        pass
-class RandomNoiseInjection(object):
-    def __init__(self, min_snr_db: float = 20.0, max_snr_db: float = 40.0):
-        assert min_snr_db <= max_snr_db
-        self.min_snr_db = min_snr_db
-        self.max_snr_db = max_snr_db
-
-    def __call__(self, y: np.ndarray) -> np.ndarray:
-        signal_rms     = np.sqrt(np.mean(y ** 2)) + 1e-9
-        noise_std      = signal_rms / (10 ** (self.snr_db / 20.0))
-        noise          = np.random.randn(*y.shape).astype(y.dtype)
-        return (y + noise * noise_std).astype(y.dtype)
-
-    def randomize_parameters(self):
-        self.snr_db = random.uniform(self.min_snr_db, self.max_snr_db)
-
-class RandomGainVariation(object):
-    """Multiply waveform by a random gain factor.
-
-    Simulates per-speaker volume differences that peak normalisation alone
-    doesn't fully remove (e.g. recording level, mic distance).
-
-    Args:
-        min_gain: lower bound of the uniform gain range (default 0.7)
-        max_gain: upper bound of the uniform gain range (default 1.3)
-    """
-
-    def __init__(self, min_gain: float = 0.7, max_gain: float = 1.3):
-        assert 0 < min_gain <= max_gain, "Need 0 < min_gain <= max_gain"
-        self.min_gain = min_gain
-        self.max_gain = max_gain
-
-    def __call__(self, y: np.ndarray) -> np.ndarray:
-        return (y * self.gain).astype(y.dtype)
-
-    def randomize_parameters(self):
-        self.gain = random.uniform(self.min_gain, self.max_gain)
-
-
 
 class NormalizeAudio(object):
     """Scale waveform to [-1, 1] by peak normalisation.

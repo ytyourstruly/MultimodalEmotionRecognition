@@ -23,16 +23,16 @@ from validation import val_epoch
 import time
 
 
-EARLY_STOPPING_PATIENCE = 30   # epochs without composite improvement before stopping
-MIN_EPOCH_FOR_BEST       = 10  # fixed warm-up buffer — no unfreeze epoch to anchor to
-
+import random
 
 def seed_worker(worker_id):
-    worker_seed = opt.manual_seed + worker_id
+    worker_seed = SEED + worker_id
     np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 
-
+EARLY_STOPPING_PATIENCE = 30   # epochs without composite improvement before stopping
+MIN_EPOCH_FOR_BEST       = 10  # fixed warm-up buffer — no unfreeze epoch to anchor to
 
 
 if __name__ == '__main__':
@@ -41,20 +41,15 @@ if __name__ == '__main__':
     test_accuracies = []
     if opt.device != 'cpu':
         opt.device = 'cuda' if torch.cuda.is_available() else 'cpu'  
-    
-
-
-
-    np.random.seed(opt.manual_seed)
-    torch.manual_seed(opt.manual_seed)
     torch.cuda.manual_seed_all(opt.manual_seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark     = False  
-
-
-
     pretrained = opt.pretrain_path != 'None'    
-    
+    SEED = opt.manual_seed
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark     = False  # slight perf cost, worth it
     #opt.result_path = 'res_'+str(time.time())
     if not os.path.exists(opt.result_path):
         os.makedirs(opt.result_path)

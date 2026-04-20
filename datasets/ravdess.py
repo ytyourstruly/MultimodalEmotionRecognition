@@ -10,7 +10,8 @@ import functools
 import numpy as np
 import librosa
 
-
+from opts import parse_opts
+opt = parse_opts()
 DEFAULT_SR      = 22050
 DEFAULT_N_MFCC  = 40
 DEFAULT_N_MELS  = 128
@@ -88,7 +89,7 @@ def load_audio(audiofile, sr):
     return y, sr
 
 def get_mfccs(y, sr):
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=10)
+    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=opt.audio_channels)
     return mfcc
 
 def make_dataset(subset, annotation_path):
